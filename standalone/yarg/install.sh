@@ -21,8 +21,6 @@ function download_yarg {
     echo -e "Downloading YARG server files..."
     wget -q "$YARG_SERVER_URL" -O YARG.zip || { echo "Failed to download YARG server files!"; exit 1; }
 
-    # The ZIP file contains a folder called linux_server, which then contains the server files, so we need to skip the first folder when extracting
-
     echo -e "\tExtracting YARG server files..."
     unzip -q YARG.zip "linux_server/*" || { echo "Failed to extract YARG server files!"; exit 1; }
 
