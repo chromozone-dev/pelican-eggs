@@ -17,10 +17,12 @@ Enshrouded only uses the query port. The separate game port was removed in a gam
 **Server Startup Command**
 
 ```bash
-proton run ./enshrouded_server.exe
+xvfb-run -a proton run ./enshrouded_server.exe
 ```
 
 See [startup.sh](./startup.sh) for the full command. It tails the server log, because the server does not write to stdout under Proton.
+
+The server runs inside `xvfb-run` because newer Proton releases (GE-Proton 11+) hang on startup when no display is available.
 
 ## Environment Variables
 
