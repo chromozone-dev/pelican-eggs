@@ -24,14 +24,14 @@
         "Default": "mkdir -p ./logs; : > ./logs/enshrouded_server.log; xvfb-run -a proton run ./enshrouded_server.exe & ENSHROUDED_PID=$!; tail -c0 -F ./logs/enshrouded_server.log --pid=$ENSHROUDED_PID"
     },
     "config": {
-        "files": "{\n  \"enshrouded_server.json\": {\n    \"parser\": \"json\",\n    \"find\": {\n      \"name\": \"{{server.environment.SERVER_NAME}}\",\n      \"queryPort\": \"{{server.allocations.default.port}}\",\n      \"slotCount\": \"{{server.environment.MAX_PLAYERS}}\",\n      \"userGroups.0.password\": \"{{server.environment.ADMIN_PASSWORD}}\",\n      \"userGroups.1.password\": \"{{server.environment.FRIEND_PASSWORD}}\",\n      \"userGroups.2.password\": \"{{server.environment.GUEST_PASSWORD}}\"\n    }\n  }\n}",
+        "files": "{\n  \"enshrouded_server.json\": {\n    \"parser\": \"json\",\n    \"find\": {\n      \"name\": \"{{server.environment.SERVER_NAME}}\",\n      \"queryPort\": \"{{server.allocations.default.port}}\",\n      \"slotCount\": \"{{server.environment.MAX_PLAYERS}}\",\n      \"userGroups.0.password\": \"{{server.environment.ADMIN_PASSWORD}}\",\n      \"userGroups.1.password\": \"{{server.environment.FRIEND_PASSWORD}}\",\n      \"userGroups.2.password\": \"{{server.environment.GUEST_PASSWORD}}\",\n      \"gameSettingsPreset\": \"{{server.environment.GAME_PRESET}}\",\n      \"enableVoiceChat\": \"{{server.environment.ENABLE_VOICE_CHAT}}\",\n      \"voiceChatMode\": \"{{server.environment.VOICE_CHAT_MODE}}\",\n      \"enableTextChat\": \"{{server.environment.ENABLE_TEXT_CHAT}}\"\n    }\n  }\n}",
         "startup": "{\n  \"done\": \"[Session] 'HostOnline' (up)!\"\n}",
         "logs": "{}",
         "stop": "^C"
     },
     "scripts": {
         "installation": {
-            "script": "#!/bin/bash\n# shellcheck disable=SC2155\n#\n# Enshrouded Installation Script\n#\n# Server Files: /mnt/server\n\n: \"${SERVER_DIR:=/mnt/server}\"\n: \"${STEAM_USER:=anonymous}\"\n: \"${STEAM_PASS:=}\"\n: \"${STEAM_AUTH:=}\"\n: \"${SRCDS_APPID:=2278520}\"\n: \"${SRCDS_BETAID:=}\"\n: \"${SRCDS_BETAPASS:=}\"\n: \"${WINDOWS_INSTALL:=1}\"\n: \"${SERVER_NAME:=Enshrouded Server}\"\n: \"${SERVER_PORT:=15637}\"\n: \"${MAX_PLAYERS:=16}\"\n: \"${ADMIN_PASSWORD:=}\"\n: \"${FRIEND_PASSWORD:=}\"\n: \"${GUEST_PASSWORD:=}\"\n\nfunction main {\n    if [[ ! -d $SERVER_DIR ]]; then\n        mkdir -p \"$SERVER_DIR\"\n    fi\n\n    if ! cd \"$SERVER_DIR\"; then\n        echo -e \"Failed to change directory to ${SERVER_DIR}\"\n        exit 1\n    fi\n\n    install_required\n\n    download_steamcmd\n\n    download_game\n\n    create_config\n\n    echo -e \"\\nInstall completed succesfully, enjoy!\"\n}\n\nfunction install_required {\n    echo -e \"Installing required packages...\"\n    echo -e \"\\tRunning apt update\"\n    apt update > /dev/null 2>&1 || { echo \"apt update failed!\"; exit 1; }\n    echo -e \"\\tRunning apt install\"\n    apt install -y wget jq > /dev/null 2>&1 || { echo \"apt install failed!\"; exit 1; }\n}\n\nSTEAMCMD_URL=\"https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz\"\n\nfunction download_steamcmd {\n    echo -e \"Downloading SteamCMD...\"\n    mkdir -p \"$SERVER_DIR/steamcmd\" || { echo \"Failed to create directory $SERVER_DIR/steamcmd\"; exit 1; }\n\n    wget -qO- \"$STEAMCMD_URL\" | tar -xz -C \"$SERVER_DIR/steamcmd\" || { echo \"Failed to download SteamCMD!\"; exit 1; }\n\n    mkdir -p \"$SERVER_DIR/steamapps\"\n}\n\nfunction download_game {\n    echo -e \"Downloading Enshrouded...\"\n    cd \"$SERVER_DIR/steamcmd\" || { echo \"Failed to change directory to $SERVER_DIR/steamcmd\"; exit 1; }\n\n    local steamcmd_args=(\n        +force_install_dir \"$SERVER_DIR\"\n        +login \"$STEAM_USER\" \"$STEAM_PASS\" \"$STEAM_AUTH\"\n    )\n\n    if [[ $WINDOWS_INSTALL -eq 1 ]]; then\n        steamcmd_args+=(\n            +@sSteamCmdForcePlatformType windows\n        )\n    fi\n\n    steamcmd_args+=(\n        +app_update \"$SRCDS_APPID\"\n    )\n\n    if [[ -n $SRCDS_BETAID ]]; then\n        steamcmd_args+=(\n            -beta \"$SRCDS_BETAID\"\n        )\n    fi\n\n    if [[ -n $SRCDS_BETAPASS ]]; then\n        steamcmd_args+=(\n            -betapassword \"$SRCDS_BETAPASS\"\n        )\n    fi\n\n    steamcmd_args+=(\n        validate +quit\n    )\n\n    echo -e \"\\tRunning SteamCMD (this may take a while)\"\n    HOME=\"$SERVER_DIR\" ./steamcmd.sh \"${steamcmd_args[@]}\" || { echo \"Failed to download Enshrouded!\"; exit 1; }\n\n    mkdir -p \"$SERVER_DIR/.steam/sdk32\"\n    cp -v \"$SERVER_DIR/steamcmd/linux32/steamclient.so\" \"$SERVER_DIR/.steam/sdk32/steamclient.so\"\n\n    mkdir -p \"$SERVER_DIR/.steam/sdk64\"\n    cp -v \"$SERVER_DIR/steamcmd/linux64/steamclient.so\" \"$SERVER_DIR/.steam/sdk64/steamclient.so\"\n\n    cd \"$SERVER_DIR\" || { echo \"Failed to change directory to $SERVER_DIR\"; exit 1; }\n}\n\nfunction create_config {\n    echo -e \"Creating server config...\"\n\n    # Never overwrite an existing config, it may contain user changes\n    if [[ -f enshrouded_server.json ]]; then\n        echo -e \"\\tFound existing enshrouded_server.json, skipping\"\n        return\n    fi\n\n    # The user group order matters, the egg updates passwords by index (0 = Admin, 1 = Friend, 2 = Guest)\n    jq -n \\\n        --arg name \"$SERVER_NAME\" \\\n        --argjson port \"$SERVER_PORT\" \\\n        --argjson slots \"$MAX_PLAYERS\" \\\n        --arg admin \"$ADMIN_PASSWORD\" \\\n        --arg friend \"$FRIEND_PASSWORD\" \\\n        --arg guest \"$GUEST_PASSWORD\" \\\n        '{\n            name: $name,\n            saveDirectory: \"./savegame\",\n            logDirectory: \"./logs\",\n            ip: \"0.0.0.0\",\n            queryPort: $port,\n            slotCount: $slots,\n            gameSettingsPreset: \"Default\",\n            userGroups: [\n                { name: \"Admin\",  password: $admin,  canKickBan: true,  canAccessInventories: true,  canEditBase: true,  canExtendBase: true,  reservedSlots: 0 },\n                { name: \"Friend\", password: $friend, canKickBan: false, canAccessInventories: true,  canEditBase: true,  canExtendBase: false, reservedSlots: 0 },\n                { name: \"Guest\",  password: $guest,  canKickBan: false, canAccessInventories: false, canEditBase: false, canExtendBase: false, reservedSlots: 0 }\n            ]\n        }' > enshrouded_server.json || { echo \"Failed to create enshrouded_server.json\"; exit 1; }\n\n    mkdir -p savegame logs\n}\n\nmain\n",
+            "script": "#!/bin/bash\n# shellcheck disable=SC2155\n#\n# Enshrouded Installation Script\n#\n# Server Files: /mnt/server\n\n: \"${SERVER_DIR:=/mnt/server}\"\n: \"${STEAM_USER:=anonymous}\"\n: \"${STEAM_PASS:=}\"\n: \"${STEAM_AUTH:=}\"\n: \"${SRCDS_APPID:=2278520}\"\n: \"${SRCDS_BETAID:=}\"\n: \"${SRCDS_BETAPASS:=}\"\n: \"${WINDOWS_INSTALL:=1}\"\n: \"${SERVER_NAME:=Enshrouded Server}\"\n: \"${SERVER_PORT:=15637}\"\n: \"${MAX_PLAYERS:=16}\"\n: \"${GAME_PRESET:=Default}\"\n: \"${ENABLE_VOICE_CHAT:=0}\"\n: \"${VOICE_CHAT_MODE:=Proximity}\"\n: \"${ENABLE_TEXT_CHAT:=0}\"\n: \"${ADMIN_PASSWORD:=}\"\n: \"${FRIEND_PASSWORD:=}\"\n: \"${GUEST_PASSWORD:=}\"\n\nfunction main {\n    if [[ ! -d $SERVER_DIR ]]; then\n        mkdir -p \"$SERVER_DIR\"\n    fi\n\n    if ! cd \"$SERVER_DIR\"; then\n        echo -e \"Failed to change directory to ${SERVER_DIR}\"\n        exit 1\n    fi\n\n    install_required\n\n    download_steamcmd\n\n    download_game\n\n    create_config\n\n    echo -e \"\\nInstall completed succesfully, enjoy!\"\n}\n\nfunction install_required {\n    echo -e \"Installing required packages...\"\n    echo -e \"\\tRunning apt update\"\n    apt update > /dev/null 2>&1 || { echo \"apt update failed!\"; exit 1; }\n    echo -e \"\\tRunning apt install\"\n    apt install -y wget jq > /dev/null 2>&1 || { echo \"apt install failed!\"; exit 1; }\n}\n\nSTEAMCMD_URL=\"https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz\"\n\nfunction download_steamcmd {\n    echo -e \"Downloading SteamCMD...\"\n    mkdir -p \"$SERVER_DIR/steamcmd\" || { echo \"Failed to create directory $SERVER_DIR/steamcmd\"; exit 1; }\n\n    wget -qO- \"$STEAMCMD_URL\" | tar -xz -C \"$SERVER_DIR/steamcmd\" || { echo \"Failed to download SteamCMD!\"; exit 1; }\n\n    mkdir -p \"$SERVER_DIR/steamapps\"\n}\n\nfunction download_game {\n    echo -e \"Downloading Enshrouded...\"\n    cd \"$SERVER_DIR/steamcmd\" || { echo \"Failed to change directory to $SERVER_DIR/steamcmd\"; exit 1; }\n\n    local steamcmd_args=(\n        +force_install_dir \"$SERVER_DIR\"\n        +login \"$STEAM_USER\" \"$STEAM_PASS\" \"$STEAM_AUTH\"\n    )\n\n    if [[ $WINDOWS_INSTALL -eq 1 ]]; then\n        steamcmd_args+=(\n            +@sSteamCmdForcePlatformType windows\n        )\n    fi\n\n    steamcmd_args+=(\n        +app_update \"$SRCDS_APPID\"\n    )\n\n    if [[ -n $SRCDS_BETAID ]]; then\n        steamcmd_args+=(\n            -beta \"$SRCDS_BETAID\"\n        )\n    fi\n\n    if [[ -n $SRCDS_BETAPASS ]]; then\n        steamcmd_args+=(\n            -betapassword \"$SRCDS_BETAPASS\"\n        )\n    fi\n\n    steamcmd_args+=(\n        validate +quit\n    )\n\n    echo -e \"\\tRunning SteamCMD (this may take a while)\"\n    HOME=\"$SERVER_DIR\" ./steamcmd.sh \"${steamcmd_args[@]}\" || { echo \"Failed to download Enshrouded!\"; exit 1; }\n\n    mkdir -p \"$SERVER_DIR/.steam/sdk32\"\n    cp -v \"$SERVER_DIR/steamcmd/linux32/steamclient.so\" \"$SERVER_DIR/.steam/sdk32/steamclient.so\"\n\n    mkdir -p \"$SERVER_DIR/.steam/sdk64\"\n    cp -v \"$SERVER_DIR/steamcmd/linux64/steamclient.so\" \"$SERVER_DIR/.steam/sdk64/steamclient.so\"\n\n    cd \"$SERVER_DIR\" || { echo \"Failed to change directory to $SERVER_DIR\"; exit 1; }\n}\n\nfunction create_config {\n    echo -e \"Creating server config...\"\n\n    # Never overwrite an existing config, it may contain user changes\n    if [[ -f enshrouded_server.json ]]; then\n        echo -e \"\\tFound existing enshrouded_server.json, skipping\"\n        return\n    fi\n\n    # The user group order matters, the egg updates passwords by index (0 = Admin, 1 = Friend, 2 = Guest)\n    jq -n \\\n        --arg name \"$SERVER_NAME\" \\\n        --argjson port \"$SERVER_PORT\" \\\n        --argjson slots \"$MAX_PLAYERS\" \\\n        --arg preset \"$GAME_PRESET\" \\\n        --argjson voice \"$([[ $ENABLE_VOICE_CHAT -eq 1 ]] && echo true || echo false)\" \\\n        --arg voiceMode \"$VOICE_CHAT_MODE\" \\\n        --argjson text \"$([[ $ENABLE_TEXT_CHAT -eq 1 ]] && echo true || echo false)\" \\\n        --arg admin \"$ADMIN_PASSWORD\" \\\n        --arg friend \"$FRIEND_PASSWORD\" \\\n        --arg guest \"$GUEST_PASSWORD\" \\\n        '{\n            name: $name,\n            saveDirectory: \"./savegame\",\n            logDirectory: \"./logs\",\n            ip: \"0.0.0.0\",\n            queryPort: $port,\n            slotCount: $slots,\n            enableVoiceChat: $voice,\n            voiceChatMode: $voiceMode,\n            enableTextChat: $text,\n            gameSettingsPreset: $preset,\n            userGroups: [\n                { name: \"Admin\",  password: $admin,  canKickBan: true,  canAccessInventories: true,  canEditBase: true,  canExtendBase: true,  reservedSlots: 0 },\n                { name: \"Friend\", password: $friend, canKickBan: false, canAccessInventories: true,  canEditBase: true,  canExtendBase: false, reservedSlots: 0 },\n                { name: \"Guest\",  password: $guest,  canKickBan: false, canAccessInventories: false, canEditBase: false, canExtendBase: false, reservedSlots: 0 }\n            ]\n        }' > enshrouded_server.json || { echo \"Failed to create enshrouded_server.json\"; exit 1; }\n\n    mkdir -p savegame logs\n}\n\nmain\n",
             "container": "ghcr.io/pelican-eggs/installers:debian",
             "entrypoint": "bash"
         }
@@ -67,6 +67,20 @@
             "sort": 2
         },
         {
+            "name": "Difficulty Preset",
+            "description": "Game difficulty preset. Choose Custom to use the gameSettings values in enshrouded_server.json instead.",
+            "env_variable": "GAME_PRESET",
+            "default_value": "Default",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "required",
+                "string",
+                "in:Default,Relaxed,Hard,Survival,Custom"
+            ],
+            "sort": 3
+        },
+        {
             "name": "Admin Password",
             "description": "Password for the Admin group. Admins can kick/ban, edit and extend bases, and access inventories.",
             "env_variable": "ADMIN_PASSWORD",
@@ -78,7 +92,7 @@
                 "string",
                 "max:64"
             ],
-            "sort": 3
+            "sort": 4
         },
         {
             "name": "Friend Password",
@@ -92,7 +106,7 @@
                 "string",
                 "max:64"
             ],
-            "sort": 4
+            "sort": 5
         },
         {
             "name": "Guest Password",
@@ -106,7 +120,45 @@
                 "string",
                 "max:64"
             ],
-            "sort": 5
+            "sort": 6
+        },
+        {
+            "name": "Enable Voice Chat",
+            "description": "Enable in-game voice chat.",
+            "env_variable": "ENABLE_VOICE_CHAT",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "boolean"
+            ],
+            "sort": 7
+        },
+        {
+            "name": "Voice Chat Mode",
+            "description": "Proximity: players only hear others nearby. Global: everyone hears everyone.",
+            "env_variable": "VOICE_CHAT_MODE",
+            "default_value": "Proximity",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "required",
+                "string",
+                "in:Proximity,Global"
+            ],
+            "sort": 8
+        },
+        {
+            "name": "Enable Text Chat",
+            "description": "Enable in-game text chat.",
+            "env_variable": "ENABLE_TEXT_CHAT",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "boolean"
+            ],
+            "sort": 9
         },
         {
             "name": "Auto Update",
@@ -118,7 +170,7 @@
             "rules": [
                 "boolean"
             ],
-            "sort": 6
+            "sort": 10
         },
         {
             "name": "App ID",
@@ -132,7 +184,7 @@
                 "string",
                 "in:2278520"
             ],
-            "sort": 7
+            "sort": 11
         },
         {
             "name": "Windows Install",
@@ -144,7 +196,7 @@
             "rules": [
                 "boolean"
             ],
-            "sort": 8
+            "sort": 12
         }
     ]
 }
